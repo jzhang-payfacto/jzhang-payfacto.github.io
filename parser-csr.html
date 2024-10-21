@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Certificate Signing Request CSR Parser</title>
+  <style>
+      body {
+          font-family: Arial, sans-serif;
+          margin: 20px;
+      }
+
+      #csrInfo, #csrDetail {
+          background-color: #f0f0f0;
+          padding: 10px;
+          border-radius: 5px;
+      }
+  </style>
+</head>
+<body>
+<h1>CSR (Certificate Signing Request) Parser</h1>
+<input type="file" id="csrFile" accept=".csr,.pem" onchange="clearCsrInfo()"><br><br>
+<button id="loadButton">Load CSR </button>
+<br>
+<div id="csrInfo"></div>
+<div id="csrDetail"></div>
+
+<script src="./x509.min.js"></script>
+<script>
+  document.getElementById('loadButton').addEventListener('click', loadCsr);
+
+  async function loadCsr() {
+    const fileInput = document.getElementById('csrFile');
+    const file = fileInput.files[0];
+
+    if (!file) {
+      alert('Please select a CSR file.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async function (e) {
+      const csrData = new Uint8Array(e.target.result);
+      try {
+        await parseCsr(csrData);
+      } catch (error) {
+        console.error('Error parsing CSR:', error);
+        document.getElementById('csrInfo').innerHTML = `Error parsing CSR: ${error.message}`;
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function parseCsr(csrData) {
+    const csrString = new TextDecoder().decode(csrData).replaceAll("\r", "");
+    const isPem = csrString.includes("-----BEGIN CERTIFICATE REQUEST-----");
+
+    const csr = isPem ? new x509.Pkcs10CertificateRequest(csrString) : new x509.Pkcs10CertificateRequest(csrData);
+    const csrDetails = getCsrBriefInfo(csr);
+    displayCsrBriefInfo(csrDetails);
+    displayCsrDetail(csr);
+  }
+
+  function getCsrBriefInfo(csr) {
+    return {
+      subject: csr.subject,
+      issuer: csr.issuer,
+      notBefore: csr.notBefore,
+      notAfter: csr.notAfter,
+      serialNumber: csr.serialNumber,
+      pemData: csr.toString("pem")
+    };
+  }
+
+  function displayCsrBriefInfo(csrInfo) {
+    const infoDiv = document.getElementById('csrInfo');
+    const csrInfoJsonString = JSON.stringify(csrInfo, null, 2);
+    infoDiv.innerHTML = `
+                <h2>CSR Information:</h2>
+                <p><strong>Subject:</strong> ${csrInfo.subject}</p>
+                <p><strong>Issuer:</strong> ${csrInfo.issuer}</p>
+                <p><strong>Valid From:</strong> ${csrInfo.notBefore}</p>
+                <p><strong>Valid To:</strong> ${csrInfo.notAfter}</p>
+                <p><strong>Serial Number:</strong> ${csrInfo.serialNumber}</p>
+                <label for="pem-data">PEM data:</label><br>
+                <textarea id="pem-data" rows="20" cols="68" readonly>${csrInfo.pemData}</textarea><br>
+                <label>
+                   <br>JSON data <br>
+                   <textarea id="json-data" rows="20" cols="76" readonly>${csrInfoJsonString}</textarea><br>
+                </label>
+            `;
+  }
+
+  function displayCsrDetail(csr) {
+    const detailDiv = document.getElementById('csrDetail');
+    const detailString  = JSON.stringify(csr, null, 2);
+    detailDiv.innerHTML = `
+                <h2>Detail Information:</h2>
+                <label>
+                   <br>CSR detail JSON data <br>
+                   <textarea id="json-data" rows="26" cols="76" readonly>${detailString}</textarea><br>
+                </label>
+            `;
+
+  }
+
+  function clearCsrInfo() {
+    document.getElementById('csrInfo').innerHTML = "";
+    document.getElementById('csrDetail').innerHTML = "";
+  }
+
+</script>
+</body>
+</html>

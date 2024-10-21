@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>X.509 Certificate Parser</title>
+  <style>
+      body {
+          font-family: Arial, sans-serif;
+          margin: 20px;
+      }
+
+      #certInfo, #certDetail {
+          background-color: #f0f0f0;
+          padding: 10px;
+          border-radius: 5px;
+      }
+  </style>
+</head>
+<body>
+<h1>X.509 Certificate Parser</h1>
+<input type="file" id="certFile" accept=".cer,.crt,.pem" onchange="clearCertInfo()"><br><br>
+<button id="loadButton">Load Certificate</button>
+<br>
+<div id="certInfo"></div>
+<div id="certDetail"></div>
+
+<script src="./x509.min.js"></script>
+<script>
+  document.getElementById('loadButton').addEventListener('click', loadCertificate);
+
+  async function loadCertificate() {
+    const fileInput = document.getElementById('certFile');
+    const file = fileInput.files[0];
+
+    if (!file) {
+      alert('Please select a certificate file.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async function (e) {
+      const certData = new Uint8Array(e.target.result);
+      try {
+        await parseCertificate(certData);
+      } catch (error) {
+        console.error('Error parsing certificate:', error);
+        document.getElementById('certInfo').innerHTML = `Error parsing certificate: ${error.message}`;
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function parseCertificate(certData) {
+    const certString = new TextDecoder().decode(certData).replaceAll("\r", "");
+    const isPem = certString.includes("-----BEGIN CERTIFICATE-----");
+
+    const certificate = isPem ? new x509.X509Certificate(certString) : new x509.X509Certificate(certData);
+    const certDetails = getCertificateBriefInfo(certificate);
+    displayCertificateBriefInfo(certDetails);
+    displayCertificateDetail(certificate);
+  }
+
+  function getCertificateBriefInfo(certificate) {
+    return {
+      subject: certificate.subject,
+      issuer: certificate.issuer,
+      notBefore: certificate.notBefore,
+      notAfter: certificate.notAfter,
+      serialNumber: certificate.serialNumber,
+      pemData: certificate.toString("pem")
+    };
+  }
+
+  function displayCertificateBriefInfo(certInfo) {
+    const infoDiv = document.getElementById('certInfo');
+    const certInfoJsonString = JSON.stringify(certInfo, null, 2);
+    infoDiv.innerHTML = `
+                <h2>Certificate Information:</h2>
+                <p><strong>Subject:</strong> ${certInfo.subject}</p>
+                <p><strong>Issuer:</strong> ${certInfo.issuer}</p>
+                <p><strong>Valid From:</strong> ${certInfo.notBefore}</p>
+                <p><strong>Valid To:</strong> ${certInfo.notAfter}</p>
+                <p><strong>Serial Number:</strong> ${certInfo.serialNumber}</p>
+                <label for="pem-data">PEM data:</label><br>
+                <textarea id="pem-data" rows="20" cols="68" readonly>${certInfo.pemData}</textarea><br>
+                <label>
+                   <br>JSON data <br>
+                   <textarea id="json-data" rows="26" cols="76" readonly>${certInfoJsonString}</textarea><br>
+                </label>
+            `;
+  }
+
+  function displayCertificateDetail(certificate) {
+    const detailDiv = document.getElementById('certDetail');
+    const detailString  = JSON.stringify(certificate, null, 2);
+    detailDiv.innerHTML = `
+                <h2>Detail Information:</h2>
+                <label>
+                   <br>Certificate detail JSON data <br>
+                   <textarea id="json-data" rows="26" cols="76" readonly>${detailString}</textarea><br>
+                </label>
+            `;
+
+  }
+
+  function clearCertInfo() {
+    document.getElementById('certInfo').innerHTML = "";
+    document.getElementById('certDetail').innerHTML = "";
+  }
+
+</script>
+</body>
+</html>
