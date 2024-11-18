@@ -19,17 +19,56 @@
 </head>
 <body>
 <h1>X.509 Certificate Parser</h1>
-<input type="file" id="certFile" accept=".cer,.crt,.pem" onchange="clearCertInfo()"><br><br>
-<button id="loadButton">Load Certificate</button>
+<div class=container>
+  <button onClick="location.reload();">Refresh Page</button>
+  <button id="buttonFileMode" onClick="activeMode('file');">File</button>
+  <button id="buttonTextMode" onClick="activeMode('text');">Text</button>
+  <hr/>
+</div>
+
+<div class="container" id=fileContainer>
+  <input type="file" id="certFile" accept=".cer,.crt,.pem" onchange="clearCertInfo()"><br><br>
+  <button id="loadFileButton">Load Certificate</button>
+</div>
+
+<div class="container" id=textContainer>
+  <label>
+    PEM text <br>
+    <textarea id="inputPemText" rows="26" cols="76" placeholder="" onchange="clearCertInfo()"></textarea>
+  </label>
+  <br>
+  <button id="loadTextButton">Load Certificate</button>
+</div>
+
 <br>
 <div id="certInfo"></div>
 <div id="certDetail"></div>
 
+
 <script src="./x509.min.js"></script>
 <script>
-  document.getElementById('loadButton').addEventListener('click', loadCertificate);
+  document.getElementById('loadFileButton').addEventListener('click', loadFileCertificate);
+  document.getElementById('loadTextButton').addEventListener('click', loadTextCertificate);
 
-  async function loadCertificate() {
+  async function loadTextCertificate() {
+    const pemText = document.getElementById('inputPemText').value;
+    const isPem = pemText.includes("-----BEGIN CERTIFICATE-----");
+    if (!isPem) {
+      const message = `The input is not a valid PEM data!`;
+      console.error('Error parsing certificate:', message);
+      document.getElementById('certInfo').innerHTML = message;
+      return;
+    }
+
+    try {
+      await parseCertificate(pemText);
+    } catch (error) {
+      console.error('Error parsing certificate:', error);
+      document.getElementById('certInfo').innerHTML = `Error parsing certificate: ${error.message}`;
+    }
+  }
+
+  async function loadFileCertificate() {
     const fileInput = document.getElementById('certFile');
     const file = fileInput.files[0];
 
@@ -52,7 +91,7 @@
   }
 
   async function parseCertificate(certData) {
-    const certString = new TextDecoder().decode(certData).replaceAll("\r", "");
+    const certString = typeof certData === 'string' ? certData : new TextDecoder().decode(certData).replaceAll("\r", "");
     const isPem = certString.includes("-----BEGIN CERTIFICATE-----");
 
     const certificate = isPem ? new x509.X509Certificate(certString) : new x509.X509Certificate(certData);
@@ -93,7 +132,7 @@
 
   function displayCertificateDetail(certificate) {
     const detailDiv = document.getElementById('certDetail');
-    const detailString  = JSON.stringify(certificate, null, 2);
+    const detailString = JSON.stringify(certificate, null, 2);
     detailDiv.innerHTML = `
                 <h2>Detail Information:</h2>
                 <label>
@@ -109,6 +148,42 @@
     document.getElementById('certDetail').innerHTML = "";
   }
 
+  let global_mode = null;
+  activeMode('file');
+
+  function activeMode(request) {
+    if (request === 'file') {
+      fileContainer.style.display = 'block';
+      textContainer.style.display = 'none';
+      buttonFileMode.disabled = true;
+      buttonTextMode.disabled = false;
+      global_mode = 'file';
+      clearCertInfo();
+    } else if (request === 'text') {
+      fileContainer.style.display = 'none';
+      textContainer.style.display = 'block';
+      buttonFileMode.disabled = false;
+      buttonTextMode.disabled = true;
+      global_mode = 'text';
+      clearCertInfo();
+    }
+  }
 </script>
+
+<!-- Appendix Section -->
+<div id="appendix">
+  <h2>Appendix: OID Information</h2>
+  <h3>2.5.29.17 - Subject Alternative Name</h3>
+  <p>The OID <code>2.5.29.17</code> corresponds to the "Subject Alternative Name" (SAN) in X.509 certificates.</p>
+  <p><strong>Subject Alternative Name (SAN)</strong> is an extension in X.509 certificates that allows additional identification information for the subject of the certificate, beyond the Common Name (CN). This extension can include:</p>
+  <ul>
+    <li>Email addresses</li>
+    <li>IP addresses</li>
+    <li>DNS names</li>
+    <li>URI (Uniform Resource Identifier)</li>
+  </ul>
+  <p>It is commonly used in SSL/TLS certificates to specify multiple domain names that a single certificate will cover, often for use in multi-domain or wildcard certificates.</p>
+</div>
+
 </body>
 </html>
