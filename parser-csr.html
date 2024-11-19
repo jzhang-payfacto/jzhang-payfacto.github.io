@@ -19,17 +19,57 @@
 </head>
 <body>
 <h1>CSR (Certificate Signing Request) Parser</h1>
-<input type="file" id="csrFile" accept=".csr,.pem" onchange="clearCsrInfo()"><br><br>
-<button id="loadButton">Load CSR </button>
+<div class=container>
+  <button onClick="location.reload();">Refresh Page</button>
+  <button id="buttonFileMode" onClick="activeMode('file');">File</button>
+  <button id="buttonTextMode" onClick="activeMode('text');">Text</button>
+  <hr/>
+</div>
+
+<div class="container" id=fileContainer>
+  <input type="file" id="csrFile" accept=".csr,.pem" onchange="clearCsrInfo()"><br><br>
+  <button id="loadFileButton">Load CSR </button>
+</div>
+
+<div class="container" id=textContainer>
+  <label>
+    PEM text <br>
+    <textarea id="inputPemText" rows="26" cols="76" placeholder="" onchange="clearCsrInfo()"></textarea>
+  </label>
+  <br>
+  <button id="loadTextButton">Load CSR</button>
+</div>
+
+
 <br>
 <div id="csrInfo"></div>
 <div id="csrDetail"></div>
 
 <script src="./x509.min.js"></script>
 <script>
-  document.getElementById('loadButton').addEventListener('click', loadCsr);
+  document.getElementById('loadFileButton').addEventListener('click', loadFileCsr);
+  document.getElementById('loadTextButton').addEventListener('click', loadTextCsr);
 
-  async function loadCsr() {
+  async function loadTextCsr() {
+    const pemText = document.getElementById('inputPemText').value;
+    const isPem = pemText.includes("-----BEGIN CERTIFICATE REQUEST-----");
+    if (!isPem) {
+      const message = `The input is not a valid PEM data!`;
+      console.error('Error parsing Csr:', message);
+      document.getElementById('csrInfo').innerHTML = message;
+      return;
+    }
+
+    try {
+      await parseCsr(pemText.replaceAll("\"","").replaceAll("\\n", "\n"));
+    } catch (error) {
+      console.error('Error parsing certificate:', error);
+      document.getElementById('csrInfo').innerHTML = `Error parsing certificate: ${error.message}`;
+    }
+  }
+
+
+  async function loadFileCsr() {
     const fileInput = document.getElementById('csrFile');
     const file = fileInput.files[0];
 
@@ -52,7 +92,7 @@
   }
 
   async function parseCsr(csrData) {
-    const csrString = new TextDecoder().decode(csrData).replaceAll("\r", "");
+    const csrString = typeof csrData === 'string' ? csrData :  new TextDecoder().decode(csrData).replaceAll("\r", "");
     const isPem = csrString.includes("-----BEGIN CERTIFICATE REQUEST-----");
 
     const csr = isPem ? new x509.Pkcs10CertificateRequest(csrString) : new x509.Pkcs10CertificateRequest(csrData);
@@ -84,11 +124,22 @@
                 <p><strong>Serial Number:</strong> ${csrInfo.serialNumber}</p>
                 <label for="pem-data">PEM data:</label><br>
                 <textarea id="pem-data" rows="20" cols="68" readonly>${csrInfo.pemData}</textarea><br>
+                <a id=savePemData>
+                  <button>Save PEM data</button>
+                </a>
+                <br>
                 <label>
                    <br>JSON data <br>
                    <textarea id="json-data" rows="20" cols="76" readonly>${csrInfoJsonString}</textarea><br>
                 </label>
             `;
+
+    const text = document.getElementById("pem-data").value;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const savePemData = document.getElementById("savePemData");
+    savePemData.href = url;
+    savePemData.download = "temp-csr.pem";
   }
 
   function displayCsrDetail(csr) {
@@ -107,6 +158,27 @@
   function clearCsrInfo() {
     document.getElementById('csrInfo').innerHTML = "";
     document.getElementById('csrDetail').innerHTML = "";
+  }
+
+  let global_mode = null;
+  activeMode('file');
+
+  function activeMode(request) {
+    if (request === 'file') {
+      fileContainer.style.display = 'block';
+      textContainer.style.display = 'none';
+      buttonFileMode.disabled = true;
+      buttonTextMode.disabled = false;
+      global_mode = 'file';
+      clearCsrInfo();
+    } else if (request === 'text') {
+      fileContainer.style.display = 'none';
+      textContainer.style.display = 'block';
+      buttonFileMode.disabled = false;
+      buttonTextMode.disabled = true;
+      global_mode = 'text';
+      clearCsrInfo();
+    }
   }
 
 </script>
