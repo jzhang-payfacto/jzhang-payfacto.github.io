@@ -61,7 +61,7 @@
     }
 
     try {
-      await parseCertificate(pemText);
+      await parseCertificate(pemText.replaceAll("\"","").replaceAll("\\n", "\n"));
     } catch (error) {
       console.error('Error parsing certificate:', error);
       document.getElementById('certInfo').innerHTML = `Error parsing certificate: ${error.message}`;
