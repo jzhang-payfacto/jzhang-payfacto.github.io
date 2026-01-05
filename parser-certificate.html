@@ -107,7 +107,8 @@
       notBefore: certificate.notBefore,
       notAfter: certificate.notAfter,
       serialNumber: certificate.serialNumber,
-      pemData: certificate.toString("pem")
+      pemData: certificate.toString("pem"),
+      publicKeyPemData: certificate.publicKey.toString("pem")
     };
   }
 
@@ -123,6 +124,8 @@
                 <p><strong>Serial Number:</strong> ${certInfo.serialNumber}</p>
                 <label for="pem-data">PEM data:</label><br>
                 <textarea id="pem-data" rows="20" cols="68" readonly>${certInfo.pemData}</textarea><br>
+                <label for="publick-key-pem-data">publick key PEM data:</label><br>
+                <textarea id="publick-key-pem-data" rows="20" cols="68" readonly>${certInfo.publicKeyPemData}</textarea><br>
                 <label>
                    <br>JSON data <br>
                    <textarea id="json-data" rows="26" cols="76" readonly>${certInfoJsonString}</textarea><br>
