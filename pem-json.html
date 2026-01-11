@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PEM Data to JSON</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+
+    h1 {
+      color: #333;
+    }
+
+    textarea {
+      width: 100%;
+      height: 200px;
+      margin-bottom: 20px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+
+    button {
+      padding: 10px 20px;
+      background-color: #007BFF;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    pre {
+      background-color: #f4f4f4;
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+  </style>
+</head>
+<body>
+
+<h1>PEM Data to JSON Converter</h1>
+<p>Enter your PEM data (e.g., a certificate) below, and it will be converted to a JSON string.</p>
+
+<textarea id="pemInput" placeholder="Enter PEM data here"></textarea><br>
+
+<button onclick="convertToJSON()">Convert to JSON</button>
+
+<h2>JSON Output</h2>
+<textarea id="jsonOutput" readonly></textarea>
+
+<script>
+  function convertToJSON() {
+    var pemData = document.getElementById("pemInput").value.trim();
+
+    // Sanitize the PEM data by removing '\r' characters
+    pemData = pemData.replace(/\r/g, "");
+
+    // Simple validation to check if PEM data has the correct structure
+    if (!pemData.startsWith("-----BEGIN") || !pemData.includes("-----END")) {
+      alert("Invalid PEM data. Please make sure your PEM data is properly formatted.");
+      return;
+    }
+
+    // Creating the JSON structure
+    var jsonOutput = {
+      "pemdata": pemData
+    };
+
+    // Displaying the output in a readable format
+    document.getElementById("jsonOutput").textContent = JSON.stringify(jsonOutput, null, 4);
+  }
+</script>
+
+</body>
+</html>
