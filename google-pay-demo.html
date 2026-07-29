@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Google Pay Jimmy Demo</title>
+<style>
+  body {
+    margin: 0;
+    padding: 48px 24px;
+    font-family: "Segoe UI", Roboto, -apple-system, Helvetica, Arial, sans-serif;
+    color: #1a1a1a;
+    text-align: center;
+  }
+  h1 { font-size: 32px; margin: 0 0 24px; }
+  p  { font-size: 17px; color: #444; margin: 0 0 12px; }
+  #amount { font-size: 22px; font-weight: 600; margin: 32px 0 20px; }
+  #gpay-container { display: flex; justify-content: center; min-height: 48px; }
+  #status { margin-top: 24px; font-size: 15px; color: #555; white-space: pre-wrap; }
+  .center-container {
+      display: flex;
+      justify-content: center; /* Horizontal centering */
+  }
+</style>
+</head>
+<body>
+
+<h1>Google Pay Jimmy Demo</h1>
+<p>Please support and donate</p>
+<p>Your contribution helps keep this project going. Thank you!</p>
+
+<div id="amount">CA$5.00</div>
+<div id="gpay-container"></div>
+<div class="center-container">
+  <label for="google-pay-web-log"></label>
+  <textarea id="google-pay-web-log" cols="80" rows="37" readonly style="display: none;"></textarea>
+</div>
+<div id="status"></div>
+
+<script>
+// ---- Configuration ------------------------------------------------------
+const AMOUNT = '5.00';
+
+// Step 1: API version
+const baseRequest = { apiVersion: 2, apiVersionMinor: 0 };
+
+// Step 2: Tokenization. 'example' is Google's test gateway — swap in your
+// real gateway (e.g. 'payfacto') and merchant id before going live.
+const tokenizationSpecification = {
+  type: 'PAYMENT_GATEWAY',
+  parameters: {
+    gateway: 'payfacto',
+    gatewayMerchantId: 'exampleGatewayMerchantId'
+  }
+};
+
+// Step 3: Supported networks and auth methods
+const allowedCardNetworks = ['AMEX', 'DISCOVER', 'INTERAC', 'JCB', 'MASTERCARD', 'VISA'];
+const allowedCardAuthMethods = ['PAN_ONLY', 'CRYPTOGRAM_3DS'];
+
+// Step 4: Allowed payment methods
+const baseCardPaymentMethod = {
+  type: 'CARD',
+  parameters: {
+    allowedAuthMethods: allowedCardAuthMethods,
+    allowedCardNetworks: allowedCardNetworks
+  }
+};
+const cardPaymentMethod = Object.assign(
+  { tokenizationSpecification: tokenizationSpecification },
+  baseCardPaymentMethod
+);
+
+let paymentsClient = null;
+
+function getPaymentsClient() {
+  if (paymentsClient === null) {
+    // Switch to 'PRODUCTION' once you have production access.
+    paymentsClient = new google.payments.api.PaymentsClient({ environment: 'TEST' });
+  }
+  return paymentsClient;
+}
+
+// Step 8: The payment data request
+function getPaymentDataRequest() {
+  const request = Object.assign({}, baseRequest);
+  request.allowedPaymentMethods = [cardPaymentMethod];
+  request.transactionInfo = {
+    totalPriceStatus: 'FINAL',
+    totalPrice: AMOUNT,
+    currencyCode: 'CAD',
+    countryCode: 'CA'
+  };
+  request.merchantInfo = {
+    // merchantId is only required in PRODUCTION; get it from the
+    // Google Pay & Wallet Console.
+    merchantName: 'Jimmy Demo'
+  };
+  return request;
+}
+
+// Steps 5–7: load the library, check readiness, render the button
+function onGooglePayLoaded() {
+  const client = getPaymentsClient();
+  const isReadyToPayRequest = Object.assign({}, baseRequest);
+  isReadyToPayRequest.allowedPaymentMethods = [baseCardPaymentMethod];
+
+  client.isReadyToPay(isReadyToPayRequest)
+    .then(function (response) {
+      if (response.result) {
+        const button = client.createButton({
+          onClick: onGooglePayClicked,
+          allowedPaymentMethods: [baseCardPaymentMethod],
+          buttonType: 'donate',
+          buttonSizeMode: 'fill'
+        });
+        document.getElementById('gpay-container').appendChild(button);
+      } else {
+        setStatus('Google Pay is not available on this device or browser.');
+      }
+    })
+    .catch(function (err) {
+      console.error(err);
+      setStatus('Could not check Google Pay availability.');
+    });
+}
+
+// Step 9: Handle the click
+function onGooglePayClicked() {
+  setStatus('');
+  getPaymentsClient().loadPaymentData(getPaymentDataRequest())
+    .then(function (paymentData) {
+      const token = paymentData.paymentMethodData.tokenizationData.token;
+      let paymentToken = "{\"paymentToken\":" +  token + "}";
+      console.log('Payment token:', token);
+      display_log("payment.token result: " + paymentToken);
+
+      let payfactoToken = {
+        paymentData: token
+      };
+
+      display_log("\n payfacto.token result: " + JSON.stringify(payfactoToken));
+
+      // Send `token` plus the order details to your backend, which forwards
+      // it to your payment service provider to charge the card.
+      setStatus('Thank you! Payment token received.');
+    })
+    .catch(function (err) {
+      if (err.statusCode === 'CANCELED') return;
+      console.error(err);
+      setStatus('Payment could not be completed.');
+    });
+}
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+function display_log(msg, error) {
+  if (error) {
+    console.error(msg, error);
+  } else {
+    console.log(msg);
+  }
+  document.getElementById('google-pay-web-log').textContent += "\n" + msg;
+  document.getElementById('google-pay-web-log').style.display = "block";
+}
+
+</script>
+
+<script async src="https://pay.google.com/gp/p/js/pay.js" onload="onGooglePayLoaded()"></script>
+
+</body>
+</html>
