@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -18,10 +17,44 @@
   #amount { font-size: 22px; font-weight: 600; margin: 32px 0 20px; }
   #gpay-container { display: flex; justify-content: center; min-height: 48px; }
   #status { margin-top: 24px; font-size: 15px; color: #555; white-space: pre-wrap; }
+  #status.error { color: #FF0000; }
+
   .center-container {
       display: flex;
       justify-content: center; /* Horizontal centering */
   }
+  .controls {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 16px 20px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    text-align: left;
+  }
+  .controls legend { font-size: 14px; font-weight: 600; padding: 0 6px; }
+  .controls .row { margin: 10px 0; font-size: 14px; }
+  .controls label { color: #444; }
+  .controls .row > label { display: block; margin-bottom: 4px; }
+  .controls input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+  .controls .env-choice { display: inline-block; margin-right: 18px; }
+  .note {
+    max-width: 480px;
+    margin: 12px auto 0;
+    font-size: 13px;
+    color: #666;
+    text-align: left;
+  }
+  #env-banner { font-size: 15px; font-weight: 600; margin: 20px 0 0; }
+  #env-banner.test { color: #137333; }
+  #env-banner.production { color: #b06000; }
 </style>
 </head>
 <body>
@@ -29,6 +62,39 @@
 <h1>Google Pay Jimmy Demo</h1>
 <p>Please support and donate</p>
 <p>Your contribution helps keep this project going. Thank you!</p>
+
+<fieldset class="controls">
+  <legend>QA settings</legend>
+
+  <div class="row">
+    <span class="env-choice">
+      <input type="radio" id="env-test" name="env" value="TEST" checked>
+      <label for="env-test">TEST</label>
+    </span>
+    <span class="env-choice">
+      <input type="radio" id="env-production" name="env" value="PRODUCTION">
+      <label for="env-production">PRODUCTION</label>
+    </span>
+  </div>
+
+  <div class="row">
+    <label for="merchant-id">Merchant ID (production only)</label>
+    <input type="text" id="merchant-id" placeholder="from Google Pay &amp; Wallet Console">
+  </div>
+
+  <div class="row">
+    <label for="gateway-merchant-id">Gateway Merchant ID</label>
+    <input type="text" id="gateway-merchant-id" value="exampleGatewayMerchantId">
+  </div>
+</fieldset>
+
+<p class="note">
+  Changing the environment reloads the page, because the Google Pay client fixes its environment
+  when it is created. The environment selection survives the reload; the ID fields are cleared, so
+  re-enter them afterwards. Everything resets to TEST when you close the tab.
+</p>
+
+<div id="env-banner"></div>
 
 <div id="amount">CA$5.00</div>
 <div id="gpay-container"></div>
@@ -45,15 +111,17 @@ const AMOUNT = '5.00';
 // Step 1: API version
 const baseRequest = { apiVersion: 2, apiVersionMinor: 0 };
 
-// Step 2: Tokenization. 'example' is Google's test gateway — swap in your
-// real gateway (e.g. 'payfacto') and merchant id before going live.
-const tokenizationSpecification = {
-  type: 'PAYMENT_GATEWAY',
-  parameters: {
-    gateway: 'payfacto',
-    gatewayMerchantId: 'exampleGatewayMerchantId'
-  }
-};
+// Step 2: Tokenization. The gateway merchant id is read from the QA settings
+// panel at call time, so QA can paste a real one without editing this file.
+function buildTokenizationSpecification() {
+  return {
+    type: 'PAYMENT_GATEWAY',
+    parameters: {
+      gateway: 'payfacto',
+      gatewayMerchantId: getGatewayMerchantId()
+    }
+  };
+}
 
 // Step 3: Supported networks and auth methods
 const allowedCardNetworks = ['AMEX', 'DISCOVER', 'INTERAC', 'JCB', 'MASTERCARD', 'VISA'];
@@ -67,17 +135,38 @@ const baseCardPaymentMethod = {
     allowedCardNetworks: allowedCardNetworks
   }
 };
-const cardPaymentMethod = Object.assign(
-  { tokenizationSpecification: tokenizationSpecification },
-  baseCardPaymentMethod
-);
+function buildCardPaymentMethod() {
+  return Object.assign(
+    { tokenizationSpecification: buildTokenizationSpecification() },
+    baseCardPaymentMethod
+  );
+}
+
+// ---- QA settings --------------------------------------------------------
+function getSelectedEnvironment() {
+  const checked = document.querySelector('input[name="env"]:checked');
+  return checked ? checked.value : 'TEST';
+}
+
+function isProduction() {
+  return getSelectedEnvironment() === 'PRODUCTION';
+}
+
+function getMerchantId() {
+  return document.getElementById('merchant-id').value.trim();
+}
+
+function getGatewayMerchantId() {
+  return document.getElementById('gateway-merchant-id').value.trim();
+}
 
 let paymentsClient = null;
 
 function getPaymentsClient() {
   if (paymentsClient === null) {
-    // Switch to 'PRODUCTION' once you have production access.
-    paymentsClient = new google.payments.api.PaymentsClient({ environment: 'TEST' });
+    paymentsClient = new google.payments.api.PaymentsClient({
+      environment: getSelectedEnvironment()
+    });
   }
   return paymentsClient;
 }
@@ -85,18 +174,19 @@ function getPaymentsClient() {
 // Step 8: The payment data request
 function getPaymentDataRequest() {
   const request = Object.assign({}, baseRequest);
-  request.allowedPaymentMethods = [cardPaymentMethod];
+  request.allowedPaymentMethods = [buildCardPaymentMethod()];
   request.transactionInfo = {
     totalPriceStatus: 'FINAL',
     totalPrice: AMOUNT,
     currencyCode: 'CAD',
     countryCode: 'CA'
   };
-  request.merchantInfo = {
-    // merchantId is only required in PRODUCTION; get it from the
-    // Google Pay & Wallet Console.
-    merchantName: 'Jimmy Demo'
-  };
+  request.merchantInfo = { merchantName: 'Jimmy Demo' };
+  // merchantId is only meaningful in PRODUCTION; sending an empty one is
+  // worse than omitting it, so only attach it when QA supplied a value.
+  if (isProduction() && getMerchantId()) {
+    request.merchantInfo.merchantId = getMerchantId();
+  }
   return request;
 }
 
@@ -129,11 +219,25 @@ function onGooglePayLoaded() {
 // Step 9: Handle the click
 function onGooglePayClicked() {
   setStatus('');
+
+  // A misconfigured production merchant fails silently on the client — the
+  // button renders and isReadyToPay still resolves true, with the failure only
+  // surfacing inside the buyflow. Check the precondition so QA gets a clear
+  // signal instead of an opaque Google-side error.
+  if (isProduction() && !getMerchantId()) {
+    setStatus('PRODUCTION needs a Merchant ID from the Google Pay & Wallet Console. '
+      + 'Enter one in the QA settings above, then click again.', 'error');
+    return;
+  }
+
   getPaymentsClient().loadPaymentData(getPaymentDataRequest())
     .then(function (paymentData) {
       const token = paymentData.paymentMethodData.tokenizationData.token;
       let paymentToken = "{\"paymentToken\":" +  token + "}";
       console.log('Payment token:', token);
+      display_log("environment: " + getSelectedEnvironment()
+        + " | merchantId: " + (getMerchantId() || "(none)")
+        + " | gatewayMerchantId: " + (getGatewayMerchantId() || "(none)"));
       display_log("payment.token result: " + paymentToken);
 
       let payfactoToken = {
@@ -153,8 +257,13 @@ function onGooglePayClicked() {
     });
 }
 
-function setStatus(msg) {
-  document.getElementById('status').textContent = msg;
+function setStatus(msg, error) {
+  const status = document.getElementById('status');
+  status.textContent = msg;
+  if (error) {
+    status.className = 'error';
+    console.error(msg, error);
+  }
 }
 
 function display_log(msg, error) {
@@ -166,6 +275,41 @@ function display_log(msg, error) {
   document.getElementById('google-pay-web-log').textContent += "\n" + msg;
   document.getElementById('google-pay-web-log').style.display = "block";
 }
+
+function showEnvironmentBanner() {
+  const environment = getSelectedEnvironment();
+  const banner = document.getElementById('env-banner');
+  banner.textContent = 'Environment: ' + environment;
+  banner.className = environment.toLowerCase();
+}
+
+// The PaymentsClient environment is fixed when the client is constructed, and
+// pay.js has already loaded by then, so a switch has to start the page over.
+// The choice rides through the reload in sessionStorage — it lives for the tab
+// only, so nothing is remembered once QA closes it.
+const ENV_STORAGE_KEY = 'googlePayDemoEnvironment';
+
+function onEnvironmentChanged() {
+  sessionStorage.setItem(ENV_STORAGE_KEY, getSelectedEnvironment());
+  location.reload();
+}
+
+function restoreSelectedEnvironment() {
+  const saved = sessionStorage.getItem(ENV_STORAGE_KEY);
+  if (saved !== 'PRODUCTION') {
+    return;
+  }
+  document.getElementById('env-production').checked = true;
+}
+
+// Wire up at parse time: pay.js loads async and calls onGooglePayLoaded(), so
+// the selection must be restored before that callback builds the client.
+restoreSelectedEnvironment();
+Array.prototype.forEach.call(
+  document.querySelectorAll('input[name="env"]'),
+  function (radio) { radio.addEventListener('change', onEnvironmentChanged); }
+);
+showEnvironmentBanner();
 
 </script>
 
