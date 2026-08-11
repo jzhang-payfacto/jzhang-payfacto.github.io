@@ -250,20 +250,31 @@ function onGooglePayClicked() {
       // it to your payment service provider to charge the card.
       setStatus('Thank you! Payment token received.');
     })
-    .catch(function (err) {
-      if (err.statusCode === 'CANCELED') return;
-      console.error(err);
-      setStatus('Payment could not be completed.');
+    .catch(function (error) {
+      setStatus('Payment could not be completed.', error);
     });
 }
 
 function setStatus(msg, error) {
   const status = document.getElementById('status');
   status.textContent = msg;
-  if (error) {
-    status.className = 'error';
-    console.error(msg, error);
+  if (!error) {
+    return
   }
+
+  status.className = 'error';
+  console.error(msg, error);
+
+  let errorDetail = {};
+  if (DOMException.prototype.isPrototypeOf(error)) {
+    errorDetail = {
+      statusCode: error.statusCode,
+      code: error.code,
+      message: error.message,
+      name: error.name
+    }
+  }
+  status.textContent = msg + " Error detail: " +  JSON.stringify(errorDetail);
 }
 
 function display_log(msg, error) {
