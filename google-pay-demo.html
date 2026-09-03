@@ -86,6 +86,11 @@
     <label for="gateway-merchant-id">Gateway Merchant ID</label>
     <input type="text" id="gateway-merchant-id" value="deadbeef-2026-0902-0001-100000000019">
   </div>
+
+  <div class="row">
+    <label for="merchant-origin">Merchant Origin (production only, hosted checkout — leave blank when the merchant owns the Merchant ID)</label>
+    <input type="text" id="merchant-origin" value="javascript:window.location.hostname" placeholder="ca.shc.payfacto.cloud">
+  </div>
 </fieldset>
 
 <p class="note">
@@ -103,6 +108,10 @@
   <textarea id="google-pay-web-log" cols="80" rows="37" readonly style="display: none;"></textarea>
 </div>
 <div id="status"></div>
+
+<script>
+  document.getElementById('merchant-origin').value = window.location.hostname;
+</script>
 
 <script>
 // ---- Configuration ------------------------------------------------------
@@ -160,6 +169,10 @@ function getGatewayMerchantId() {
   return document.getElementById('gateway-merchant-id').value.trim();
 }
 
+function getMerchantOrigin() {
+  return document.getElementById('merchant-origin').value.trim();
+}
+
 let paymentsClient = null;
 
 function getPaymentsClient() {
@@ -186,6 +199,13 @@ function getPaymentDataRequest() {
   // worse than omitting it, so only attach it when QA supplied a value.
   if (isProduction() && getMerchantId()) {
     request.merchantInfo.merchantId = getMerchantId();
+  }
+  // merchantOrigin is for a hosted checkout, where this site requests payment
+  // data on behalf of another site. Google says not to send it when the
+  // merchant registered its own merchantId, so it stays opt-in: only attached
+  // in PRODUCTION when QA actually typed a hostname.
+  if (isProduction() && getMerchantOrigin()) {
+    request.merchantInfo.merchantOrigin = getMerchantOrigin();
   }
   return request;
 }
@@ -237,7 +257,8 @@ function onGooglePayClicked() {
       console.log('Payment token:', token);
       display_log("environment: " + getSelectedEnvironment()
         + " | merchantId: " + (getMerchantId() || "(none)")
-        + " | gatewayMerchantId: " + (getGatewayMerchantId() || "(none)"));
+        + " | gatewayMerchantId: " + (getGatewayMerchantId() || "(none)")
+        + " | merchantOrigin: " + (getMerchantOrigin() || "(none)"));
       display_log("payment.token result: " + paymentToken);
 
       let payfactoToken = {
