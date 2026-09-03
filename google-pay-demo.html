@@ -60,7 +60,7 @@
 <body>
 
 <h1>Google Pay Jimmy Demo</h1>
-<p>Please support and donate</p>
+<p>Please support and subscribe</p>
 <p>Your contribution helps keep this project going. Thank you!</p>
 
 <fieldset class="controls">
@@ -78,13 +78,13 @@
   </div>
 
   <div class="row">
-    <label for="merchant-id">Merchant ID (production only)</label>
-    <input type="text" id="merchant-id" placeholder="from Google Pay &amp; Wallet Console">
+    <label for="merchant-id">Merchant ID (production only from Google Pay &amp; Wallet Console)</label>
+    <input type="text" id="merchant-id" value="BCR2DN6D3LWLJMA2">
   </div>
 
   <div class="row">
     <label for="gateway-merchant-id">Gateway Merchant ID</label>
-    <input type="text" id="gateway-merchant-id" value="exampleGatewayMerchantId">
+    <input type="text" id="gateway-merchant-id" value="deadbeef-2026-0902-0001-100000000019">
   </div>
 </fieldset>
 
@@ -202,7 +202,7 @@ function onGooglePayLoaded() {
         const button = client.createButton({
           onClick: onGooglePayClicked,
           allowedPaymentMethods: [baseCardPaymentMethod],
-          buttonType: 'donate',
+          buttonType: 'pay',
           buttonSizeMode: 'fill'
         });
         document.getElementById('gpay-container').appendChild(button);
