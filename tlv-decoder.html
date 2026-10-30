@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Enforces the "no network connections" promise: the browser blocks all
+     fetch/XHR/WebSocket/script/image/font requests from this page. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+<title>TLV decoder</title>
+<style>
+  :root {
+    --page: #EEF2F7;
+    --surface: #FBFCFE;
+    --surface-2: #E4EAF2;
+    --ink: #14213D;
+    --muted: #5B6B82;
+    --line: #CBD5E3;
+    --gold: #B8901C;
+    --gold-soft: #F4E7BE;
+    --gold-ink: #4A3A08;
+    --teal: #1F7A8C;
+    --teal-soft: #DCEFF2;
+    --error: #B42318;
+    --error-soft: #FDECEA;
+    --focus: #2F6FED;
+    --sans: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    color-scheme: light;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page: #0E1626;
+      --surface: #152036;
+      --surface-2: #1C2A44;
+      --ink: #E6ECF5;
+      --muted: #9AA8BE;
+      --line: #2C3D5C;
+      --gold: #E0B94A;
+      --gold-soft: #3A3115;
+      --gold-ink: #F4E2A6;
+      --teal: #5FC0D2;
+      --teal-soft: #15343D;
+      --error: #FF8A80;
+      --error-soft: #3A1D1D;
+      --focus: #7FA6FF;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #0E1626;
+    --surface: #152036;
+    --surface-2: #1C2A44;
+    --ink: #E6ECF5;
+    --muted: #9AA8BE;
+    --line: #2C3D5C;
+    --gold: #E0B94A;
+    --gold-soft: #3A3115;
+    --gold-ink: #F4E2A6;
+    --teal: #5FC0D2;
+    --teal-soft: #15343D;
+    --error: #FF8A80;
+    --error-soft: #3A1D1D;
+    --focus: #7FA6FF;
+    color-scheme: dark;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  *, *::before, *::after { box-sizing: inherit; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font: 16px/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0 0 auto;
+    height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--ink);
+  }
+
+  /* Header */
+  .masthead { background: var(--ink); color: var(--page); }
+  .masthead-inner {
+    max-width: 1180px; margin: 0 auto; padding: 14px 20px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .mark {
+    width: 30px; height: 24px; border-radius: 5px; background: var(--gold);
+    position: relative; flex: none;
+  }
+  .mark::before, .mark::after { content: ""; position: absolute; opacity: .55; }
+  .mark::before { left: 9px; right: 9px; top: 0; bottom: 0; border-left: 1px solid var(--ink); border-right: 1px solid var(--ink); }
+  .mark::after { left: 0; right: 0; top: 50%; height: 1px; background: var(--ink); }
+  .masthead h1 { margin: 0; font-size: 1.15rem; font-weight: 600; letter-spacing: -0.01em; }
+  .masthead p { margin: 0 0 0 auto; font-size: .875rem; opacity: .7; }
+
+  /* Shell */
+  .shell {
+    max-width: 1180px; margin: 0 auto; padding: 24px 20px 48px;
+    display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 28px;
+  }
+  nav.side h2 { font-size: .8125rem; font-weight: 600; color: var(--muted); margin: 4px 0 8px; }
+  nav.side ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  nav.side a {
+    display: block; padding: 7px 10px; border-radius: 6px;
+    color: var(--ink); text-decoration: none; font-size: .9375rem;
+  }
+  nav.side a:hover { background: var(--surface-2); }
+  nav.side a[aria-current="page"] { background: var(--surface); box-shadow: inset 3px 0 0 var(--gold); font-weight: 600; }
+  nav.side .note { margin-top: 20px; font-size: .8125rem; color: var(--muted); line-height: 1.45; }
+  nav.side .note a { display: inline; padding: 0; color: var(--teal); text-decoration: underline; }
+
+  main { min-width: 0; }
+  .panel {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 22px 24px;
+  }
+  .panel + .panel { margin-top: 20px; }
+  .intro { margin: 0 0 18px; color: var(--muted); max-width: 64ch; }
+  h2.title { font-size: 1.5rem; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.015em; font-weight: 700; }
+
+  label.field { display: block; font-weight: 600; margin-bottom: 6px; }
+  textarea {
+    width: 100%; min-height: 120px; resize: vertical;
+    font: 15px/1.55 var(--mono); color: var(--ink);
+    background: var(--page); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 14px; word-break: break-all;
+  }
+  textarea:focus-visible, button:focus-visible, a:focus-visible, input:focus-visible, .toggle:focus-visible {
+    outline: 2px solid var(--focus); outline-offset: 2px;
+  }
+  .hint { font-size: .875rem; color: var(--muted); margin: 8px 0 0; }
+  .hint code { font-family: var(--mono); font-size: .8125rem; word-break: break-all; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  button {
+    font: 600 .9375rem/1 var(--sans); padding: 11px 18px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer;
+  }
+  button:hover { background: var(--surface-2); }
+  button.primary { background: var(--ink); color: var(--page); border-color: var(--ink); }
+  button.primary:hover { opacity: .9; background: var(--ink); }
+  button:disabled { opacity: .5; cursor: progress; }
+
+  /* Messages */
+  .msg { border-radius: 8px; padding: 12px 14px; margin-top: 16px; font-size: .9375rem; }
+  .msg.error { background: var(--error-soft); color: var(--error); border: 1px solid currentColor; }
+  .msg.error strong { display: block; margin-bottom: 2px; }
+  [hidden] { display: none !important; }
+
+  /* Result tree */
+  .result-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-bottom: 14px; }
+  .result-head h3 { margin: 0; font-size: 1.125rem; }
+  .result-head .meta { color: var(--muted); font-size: .875rem; }
+  .result-head .legend { margin-left: auto; display: flex; gap: 14px; font-size: .8125rem; color: var(--muted); align-items: center; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+  .tree-scroll { overflow-x: auto; }
+  ul.tree { list-style: none; margin: 0; padding: 0; }
+  ul.tree ul.tree { min-width: 0; margin-left: 17px; padding-left: 18px; border-left: 2px solid var(--gold-soft); }
+  li.node { padding: 6px 0; }
+  .row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+  .chip {
+    font: 600 .875rem/1 var(--mono); padding: 6px 9px; border-radius: 6px; min-width: 40px; text-align: center;
+    border: 1.5px solid var(--teal); color: var(--teal); background: var(--teal-soft);
+  }
+  .chip.constructed {
+    border-color: var(--gold); background: var(--gold); color: #1d1606; padding-left: 14px; padding-right: 14px;
+    background-image:
+      linear-gradient(to right, transparent 7px, rgba(0,0,0,.25) 7px, rgba(0,0,0,.25) 8px, transparent 8px),
+      linear-gradient(to left, transparent 7px, rgba(0,0,0,.25) 7px, rgba(0,0,0,.25) 8px, transparent 8px);
+  }
+  .legend .chip { font-size: .6875rem; padding: 3px 6px; min-width: 0; }
+  .name { font-weight: 600; overflow-wrap: anywhere; }
+  .name.unknown { font-weight: 500; color: var(--muted); font-style: italic; }
+  .name a { color: inherit; text-decoration: none; }
+  .len { font: .8125rem/1 var(--mono); color: var(--muted); white-space: nowrap; }
+  .toggle {
+    all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 12px; border-radius: 6px;
+  }
+  .toggle .caret { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid var(--muted); transition: transform .15s ease; }
+  .toggle[aria-expanded="false"] .caret { transform: rotate(-90deg); }
+  .value {
+    margin: 6px 0 2px 0; padding: 8px 12px; border-radius: 6px; background: var(--page);
+    font: 14px/1.6 var(--mono); word-break: break-all;
+  }
+  .value .text { display: block; margin-top: 2px; font-family: var(--sans); font-size: .875rem; color: var(--muted); word-break: normal; overflow-wrap: anywhere; }
+  .value .text b { font-weight: 600; color: var(--ink); }
+  .value.empty { color: var(--muted); font-family: var(--sans); font-size: .875rem; }
+
+  /* Reference table */
+  .search { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
+  .search input {
+    flex: 1; font: 15px/1.4 var(--sans); padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--page); color: var(--ink);
+  }
+  .table-scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 460px; font-size: .9375rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .8125rem; color: var(--muted); font-weight: 600; }
+  td.t { font-family: var(--mono); font-weight: 600; white-space: nowrap; }
+  td.f { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
+  tr:target td { background: var(--gold-soft); }
+
+  footer.foot { color: var(--muted); font-size: .8125rem; margin-top: 18px; }
+  footer.foot a { color: var(--teal); }
+
+  @media (max-width: 760px) {
+    ul.tree ul.tree { margin-left: 8px; padding-left: 10px; }
+    .shell { grid-template-columns: 1fr; gap: 16px; padding-top: 16px; }
+    nav.side h2, nav.side .note { display: none; }
+    nav.side ul { grid-auto-flow: column; justify-content: start; gap: 6px; }
+    .masthead p { display: none; }
+    .panel { padding: 18px 16px; }
+    .result-head .legend { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .toggle .caret { transition: none; } }
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div class="masthead-inner">
+    <span class="mark" aria-hidden="true"></span>
+    <h1>TLV decoder</h1>
+    <p>EMV BER-TLV, decoded in your browser</p>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="side" aria-label="Tools">
+    <h2>EMV tools</h2>
+    <ul>
+      <li><a href="#decoder" data-view="decoder" aria-current="page">TLV decoder</a></li>
+      <li><a href="#reference" data-view="reference">EMV tag reference</a></li>
+    </ul>
+    <p class="note">Parser adapted from @tomkp/ber-tlv (MIT). The page makes no network requests, so nothing you paste leaves it.</p>
+
+    <h4>Operation and privacy</h4>
+    <p>
+      This page utilizes JavaScript executed within your web browser to perform in-browser decoding.
+      No network connections are established during this process, ensuring
+      that your data remain exclusively within the confines of your web browser.
+      This claim can be independently verified by examining the page's source code.
+    </p>
+
+    <h4>Running this page offline</h4>
+    <p>
+      This web page is completely self-contained. It does not rely on any external files; all JavaScript
+      and CSS necessary for its functionality are included directly in its source code. To run this page
+      offline on your system, simply save it as an .html file and open it in your web browser.
+    </p>
+  </nav>
+
+  <main>
+    <!-- Decoder view -->
+    <section id="view-decoder">
+      <div class="panel">
+        <h2 class="title">Decode TLV data</h2>
+        <p class="intro">Paste EMV records encoded in tag-length-value format to see each tag, its name and its value.</p>
+        <form id="form" autocomplete="off" novalidate>
+          <label class="field" for="data">TLV data (hex)</label>
+          <textarea id="data" name="data" spellcheck="false" placeholder="6F1A840E315041592E5359532E4444463031A5088801025F2D02656E"></textarea>
+          <p class="hint">Spaces, line breaks and colons are ignored. Example: <code>6F1A840E315041592E5359532E4444463031A5088801025F2D02656E</code></p>
+          <div class="actions">
+            <button type="submit" class="primary" id="decodeBtn">Decode</button>
+            <button type="button" id="exampleBtn">Load example</button>
+            <button type="button" id="clearBtn">Clear</button>
+          </div>
+          <div class="msg error" id="error" role="alert" hidden></div>
+        </form>
+      </div>
+
+      <div class="panel" id="resultPanel" hidden>
+        <div class="result-head">
+          <h3>Decoded tags</h3>
+          <span class="meta" id="resultMeta"></span>
+          <span class="legend" aria-hidden="true">
+            <span><span class="chip constructed">6F</span>Template</span>
+            <span><span class="chip">84</span>Data</span>
+          </span>
+        </div>
+        <div class="tree-scroll"><ul class="tree" id="tree"></ul></div>
+      </div>
+    </section>
+
+    <!-- Reference view -->
+    <section id="view-reference" hidden>
+      <div class="panel">
+        <h2 class="title">EMV tag reference</h2>
+        <p class="intro">The tags this decoder can name. Formats: <b>b</b> binary, <b>n</b> numeric BCD, <b>cn</b> compressed numeric, <b>a</b> alphabetic, <b>an</b> alphanumeric, <b>ans</b> alphanumeric with specials.</p>
+        <div class="search">
+          <input type="search" id="refSearch" placeholder="Search by tag or name, e.g. 9F26 or cryptogram" aria-label="Search tags">
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Tag</th><th>Name</th><th>Format</th></tr></thead>
+            <tbody id="refBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot">EMV® is a registered trademark of EMVCo LLC. Tag names follow EMV Books 1–4 and common kernel specifications.</footer>
+  </main>
+</div>
+
+<script type="module">
+  // ---------- EMV tag dictionary: tag -> [name, format] ----------
+  const TAGS = {
+    "42": ["Issuer Identification Number (IIN)", "n"],
+    "4F": ["Application Identifier (AID) – card", "b"],
+    "50": ["Application Label", "ans"],
+    "57": ["Track 2 Equivalent Data", "b"],
+    "5A": ["Application Primary Account Number (PAN)", "cn"],
+    "5F20": ["Cardholder Name", "ans"],
+    "5F24": ["Application Expiration Date", "n"],
+    "5F25": ["Application Effective Date", "n"],
+    "5F28": ["Issuer Country Code", "n"],
+    "5F2A": ["Transaction Currency Code", "n"],
+    "5F2D": ["Language Preference", "an"],
+    "5F30": ["Service Code", "n"],
+    "5F34": ["Application Primary Account Number (PAN) Sequence Number", "n"],
+    "5F36": ["Transaction Currency Exponent", "n"],
+    "5F50": ["Issuer URL", "ans"],
+    "5F53": ["International Bank Account Number (IBAN)", "b"],
+    "5F54": ["Bank Identifier Code (BIC)", "b"],
+    "5F55": ["Issuer Country Code (alpha2 format)", "a"],
+    "5F56": ["Issuer Country Code (alpha3 format)", "a"],
+    "61": ["Application Template", "b"],
+    "6F": ["File Control Information (FCI) Template", "b"],
+    "70": ["READ RECORD Response Message Template", "b"],
+    "71": ["Issuer Script Template 1", "b"],
+    "72": ["Issuer Script Template 2", "b"],
+    "73": ["Directory Discretionary Template", "b"],
+    "77": ["Response Message Template Format 2", "b"],
+    "80": ["Response Message Template Format 1", "b"],
+    "81": ["Amount, Authorised (Binary)", "b"],
+    "82": ["Application Interchange Profile (AIP)", "b"],
+    "83": ["Command Template", "b"],
+    "84": ["Dedicated File (DF) Name", "b"],
+    "86": ["Issuer Script Command", "b"],
+    "87": ["Application Priority Indicator", "b"],
+    "88": ["Short File Identifier (SFI)", "b"],
+    "89": ["Authorisation Code", "ans"],
+    "8A": ["Authorisation Response Code", "an"],
+    "8C": ["Card Risk Management Data Object List 1 (CDOL1)", "b"],
+    "8D": ["Card Risk Management Data Object List 2 (CDOL2)", "b"],
+    "8E": ["Cardholder Verification Method (CVM) List", "b"],
+    "8F": ["Certification Authority Public Key Index", "b"],
+    "90": ["Issuer Public Key Certificate", "b"],
+    "91": ["Issuer Authentication Data", "b"],
+    "92": ["Issuer Public Key Remainder", "b"],
+    "93": ["Signed Static Application Data", "b"],
+    "94": ["Application File Locator (AFL)", "b"],
+    "95": ["Terminal Verification Results (TVR)", "b"],
+    "97": ["Transaction Certificate Data Object List (TDOL)", "b"],
+    "98": ["Transaction Certificate (TC) Hash Value", "b"],
+    "99": ["Transaction Personal Identification Number (PIN) Data", "b"],
+    "9A": ["Transaction Date", "n"],
+    "9B": ["Transaction Status Information (TSI)", "b"],
+    "9C": ["Transaction Type", "n"],
+    "9D": ["Directory Definition File (DDF) Name", "b"],
+    "9F01": ["Acquirer Identifier", "n"],
+    "9F02": ["(Cryptogram) Amount, Authorised (Numeric)", "n"],
+    "9F03": ["Amount, Other (Numeric)", "n"],
+    "9F04": ["Amount, Other (Binary)", "b"],
+    "9F05": ["Application Discretionary Data", "b"],
+    "9F06": ["Application Identifier (AID) – terminal", "b"],
+    "9F07": ["Application Usage Control", "b"],
+    "9F08": ["Application Version Number (card)", "b"],
+    "9F09": ["Application Version Number (terminal)", "b"],
+    "9F0A": ["Application Selection Registered Proprietary Data", "b"],
+    "9F0B": ["Cardholder Name Extended", "ans"],
+    "9F0D": ["Issuer Action Code – Default", "b"],
+    "9F0E": ["Issuer Action Code – Denial", "b"],
+    "9F0F": ["Issuer Action Code – Online", "b"],
+    "9F10": ["Issuer Application Data (IAD)", "b"],
+    "9F11": ["Issuer Code Table Index", "n"],
+    "9F12": ["Application Preferred Name", "ans"],
+    "9F13": ["Last Online Application Transaction Counter (ATC) Register", "b"],
+    "9F14": ["Lower Consecutive Offline Limit", "b"],
+    "9F15": ["Merchant Category Code", "n"],
+    "9F16": ["Merchant Identifier", "ans"],
+    "9F17": ["Personal Identification Number (PIN) Try Counter", "b"],
+    "9F18": ["Issuer Script Identifier", "b"],
+    "9F19": ["Token Requestor ID", "n"],
+    "9F1A": ["Terminal Country Code", "n"],
+    "9F1B": ["Terminal Floor Limit", "b"],
+    "9F1C": ["Terminal Identification", "an"],
+    "9F1D": ["Terminal Risk Management Data", "b"],
+    "9F1E": ["Interface Device (IFD) Serial Number", "an"],
+    "9F1F": ["Track 1 Discretionary Data", "ans"],
+    "9F20": ["Track 2 Discretionary Data", "cn"],
+    "9F21": ["Transaction Time", "n"],
+    "9F22": ["Certification Authority Public Key Index (terminal)", "b"],
+    "9F23": ["Upper Consecutive Offline Limit", "b"],
+    "9F24": ["Payment Account Reference (PAR)", "an"],
+    "9F25": ["Last 4 Digits of PAN", "n"],
+    "9F26": ["Application Cryptogram (AC)", "b"],
+    "9F27": ["Cryptogram Information Data (CID)", "b"],
+    "9F29": ["Extended Selection", "b"],
+    "9F2A": ["Kernel Identifier", "b"],
+    "9F2D": ["ICC PIN Encipherment Public Key Certificate", "b"],
+    "9F2E": ["ICC PIN Encipherment Public Key Exponent", "b"],
+    "9F2F": ["ICC PIN Encipherment Public Key Remainder", "b"],
+    "9F32": ["Issuer Public Key Exponent", "b"],
+    "9F33": ["Terminal Capabilities", "b"],
+    "9F34": ["Cardholder Verification Method (CVM) Results", "b"],
+    "9F35": ["Terminal Type", "n"],
+    "9F36": ["Application Transaction Counter (ATC)", "b"],
+    "9F37": ["Unpredictable Number", "b"],
+    "9F38": ["Processing Options Data Object List (PDOL)", "b"],
+    "9F39": ["Point-of-Service (POS) Entry Mode", "n"],
+    "9F3A": ["Amount, Reference Currency", "b"],
+    "9F3B": ["Application Reference Currency", "n"],
+    "9F3C": ["Transaction Reference Currency Code", "n"],
+    "9F3D": ["Transaction Reference Currency Exponent", "n"],
+    "9F40": ["Additional Terminal Capabilities", "b"],
+    "9F41": ["Transaction Sequence Counter", "n"],
+    "9F42": ["Application Currency Code", "n"],
+    "9F43": ["Application Reference Currency Exponent", "n"],
+    "9F44": ["Application Currency Exponent", "n"],
+    "9F45": ["Data Authentication Code", "b"],
+    "9F46": ["ICC Public Key Certificate", "b"],
+    "9F47": ["ICC Public Key Exponent", "b"],
+    "9F48": ["ICC Public Key Remainder", "b"],
+    "9F49": ["Dynamic Data Authentication Data Object List (DDOL)", "b"],
+    "9F4A": ["Static Data Authentication Tag List", "b"],
+    "9F4B": ["Signed Dynamic Application Data", "b"],
+    "9F4C": ["ICC Dynamic Number", "b"],
+    "9F4D": ["Log Entry", "b"],
+    "9F4E": ["Merchant Name and Location", "ans"],
+    "9F4F": ["Log Format", "b"],
+    "9F53": ["Transaction Category Code", "an"],
+    "9F5B": ["Issuer Script Results", "b"],
+    "9F5D": ["Available Offline Spending Amount", "n"],
+    "9F66": ["Terminal Transaction Qualifiers (TTQ)", "b"],
+    "9F69": ["Card Authentication Related Data / UDOL", "b"],
+    "9F6A": ["Unpredictable Number (Numeric)", "n"],
+    "9F6C": ["Card Transaction Qualifiers (CTQ)", "b"],
+    "9F6E": ["Form Factor Indicator / Third Party Data", "b"],
+    "9F7A": ["VLP Terminal Support Indicator", "b"],
+    "9F7B": ["VLP Terminal Transaction Limit", "n"],
+    "9F7C": ["Customer Exclusive Data (CED)", "b"],
+    "9F7E": ["Mobile Support Indicator", "b"],
+    "A5": ["File Control Information (FCI) Proprietary Template", "b"],
+    "BF0C": ["File Control Information (FCI) Issuer Discretionary Data", "b"]
+  };
+
+  const EXAMPLE = "6F1A840E315041592E5359532E4444463031A5088801025F2D02656E";
+
+  const $ = (id) => document.getElementById(id);
+  const form = $("form"), input = $("data"), errorBox = $("error");
+  const resultPanel = $("resultPanel"), meta = $("resultMeta");
+  let treeEl = $("tree");
+
+  const toHex = (bytes) => Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+  const isPrintable = (b) => b >= 0x20 && b <= 0x7E;
+
+  function showError(title, detail) {
+    errorBox.innerHTML = "";
+    const s = document.createElement("strong"); s.textContent = title;
+    errorBox.append(s, document.createTextNode(detail || ""));
+    errorBox.hidden = false;
+    resultPanel.hidden = true;
+  }
+  function clearError() { errorBox.hidden = true; errorBox.textContent = ""; }
+
+  // ---------- Input cleaning ----------
+  function cleanHex(raw) {
+    const s = raw.replace(/0x/gi, "").replace(/[\s:,-]/g, "");
+    if (!s) throw { title: "Enter some TLV data to decode.", detail: "" };
+    const bad = s.search(/[^0-9a-f]/i);
+    if (bad !== -1) throw { title: "That isn’t hex.", detail: ` “${s[bad]}” at character ${bad + 1} isn’t 0–9 or A–F.` };
+    if (s.length % 2) throw { title: "The data has an odd number of hex digits.", detail: ` Each byte needs two digits; ${s.length} digits were entered.` };
+    return Uint8Array.from(s.match(/../g), h => parseInt(h, 16));
+  }
+
+  // ---------- BER-TLV parser (ISO/IEC 8825-1 / X.690) ----------
+  // Adapted from @tomkp/ber-tlv 1.0.1 (https://github.com/tomkp/tlv),
+  // MIT License, Copyright (c) 2025 tomkp, so the page loads no third-party code.
+  // Unlike the library's parse(), this one rejects truncated values and reports
+  // the byte offset of each problem. Offsets are absolute; `end` bounds the
+  // enclosing template.
+  function parseTag(data, offset, end) {
+    const first = data[offset];
+    const constructed = (first & 0x20) !== 0;
+    // Single-byte tag: tag number fits in the low 5 bits
+    if ((first & 0x1F) !== 0x1F) return { tag: { constructed, bytes: data.slice(offset, offset + 1) }, bytesRead: 1 };
+    // Multi-byte tag: each subsequent byte has bit 8 set until the last one
+    for (let i = offset + 1; i < end; i++) {
+      if ((data[i] & 0x80) === 0) {
+        return { tag: { constructed, bytes: data.slice(offset, i + 1) }, bytesRead: i + 1 - offset };
+      }
+    }
+    throw new Error("Unexpected end of data while parsing multi-byte tag");
+  }
+
+  function parseLength(data, offset, end) {
+    if (offset >= end) throw new Error(`No data at offset ${offset}`);
+    const first = data[offset];
+    // Short form: bit 8 is 0, bits 7-1 are the length
+    if ((first & 0x80) === 0) return { length: first, bytesRead: 1 };
+    // Long form: bits 7-1 are the number of subsequent length bytes
+    const count = first & 0x7F;
+    if (count === 0) throw new Error("Indefinite length not supported");
+    if (offset + 1 + count > end) throw new Error("Unexpected end of data while parsing length");
+    let length = 0;
+    // Multiply rather than shift: `<< 8` overflows into negative numbers past 3 bytes
+    for (let i = 1; i <= count; i++) length = length * 256 + data[offset + i];
+    return { length, bytesRead: 1 + count };
+  }
+
+  function parseTlv(data, start = 0, end = data.length) {
+    const tlvs = [];
+    let off = start;
+    while (off < end) {
+      const at = off;
+      let tag, len;
+      try {
+        const t = parseTag(data, off, end); tag = t.tag; off += t.bytesRead;
+      } catch (e) {
+        const b = data[at];
+        const pad = (b === 0xFF) ? " A trailing FF often means padding; remove it and decode again." : "";
+        throw { title: `Couldn’t read the tag at byte ${at}.`, detail: ` ${e.message}.${pad}` };
+      }
+      const tagHex = toHex(tag.bytes);
+      try {
+        const l = parseLength(data, off, end); len = l.length; off += l.bytesRead;
+      } catch (e) {
+        throw { title: `Couldn’t read the length of tag ${tagHex} (byte ${at}).`, detail: ` ${e.message}.` };
+      }
+      if (off + len > end) {
+        throw { title: `Tag ${tagHex} at byte ${at} is truncated.`, detail: ` It declares ${len} byte${len === 1 ? "" : "s"} of value but only ${end - off} remain.` };
+      }
+      tlvs.push(tag.constructed
+        ? { tag, length: len, children: parseTlv(data, off, off + len) }
+        : { tag, length: len, value: data.slice(off, off + len) });
+      off += len;
+    }
+    return tlvs;
+  }
+
+  // ---------- Rendering ----------
+  let tagCount = 0;
+  function describe(tagHex) {
+    if (TAGS[tagHex]) return { name: TAGS[tagHex][0], fmt: TAGS[tagHex][1], known: true };
+    if (tagHex === "00") return { name: "Padding", fmt: "b", known: false };
+    return { name: "Unknown or proprietary tag", fmt: "b", known: false };
+  }
+
+  function valueBlock(bytes, fmt) {
+    const v = document.createElement("div");
+    v.className = "value";
+    if (!bytes.length) { v.classList.add("empty"); v.textContent = "Empty value"; return v; }
+    v.append(document.createTextNode(toHex(bytes)));
+    const textual = fmt === "a" || fmt === "an" || fmt === "ans";
+    const allPrintable = bytes.every(isPrintable);
+    if (textual || (allPrintable && bytes.length >= 4)) {
+      const t = document.createElement("span");
+      t.className = "text";
+      const label = document.createElement("b");
+      label.textContent = "Text: ";
+      const str = Array.from(bytes, b => isPrintable(b) ? String.fromCharCode(b) : "·").join("");
+      t.append(label, document.createTextNode(`“${str}”`));
+      v.append(t);
+    }
+    return v;
+  }
+
+  function renderNodes(tlvs) {
+    const ul = document.createElement("ul");
+    ul.className = "tree";
+    for (const tlv of tlvs) {
+      tagCount++;
+      const tagHex = toHex(tlv.tag.bytes);
+      const info = describe(tagHex);
+      const constructed = tlv.tag.constructed;
+      const length = tlv.length;
+
+      const li = document.createElement("li");
+      li.className = "node";
+
+      const chip = document.createElement("span");
+      chip.className = "chip" + (constructed ? " constructed" : "");
+      chip.textContent = tagHex;
+
+      const name = document.createElement("span");
+      name.className = "name" + (info.known ? "" : " unknown");
+      name.textContent = info.name;
+
+      const len = document.createElement("span");
+      len.className = "len";
+      len.textContent = `${length} byte${length === 1 ? "" : "s"}`;
+      len.title = "Value length";
+
+      const row = document.createElement("div");
+      row.className = "row";
+
+      if (constructed) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "toggle";
+        btn.setAttribute("aria-expanded", "true");
+        const caret = document.createElement("span"); caret.className = "caret"; caret.setAttribute("aria-hidden", "true");
+        btn.append(caret, chip);
+        btn.setAttribute("aria-label", `Toggle ${tagHex} ${info.name}`);
+        row.append(btn, name, len);
+        li.append(row);
+        const kids = (tlv.children && tlv.children.length) ? renderNodes(tlv.children) : null;
+        if (kids) {
+          li.append(kids);
+          btn.addEventListener("click", () => {
+            const open = btn.getAttribute("aria-expanded") === "true";
+            btn.setAttribute("aria-expanded", String(!open));
+            kids.hidden = open;
+          });
+        } else {
+          li.append(valueBlock(new Uint8Array(), info.fmt));
+        }
+      } else {
+        row.append(chip, name, len);
+        li.append(row, valueBlock(tlv.value, info.fmt));
+      }
+      ul.append(li);
+    }
+    return ul;
+  }
+
+  function decode(raw, { updateUrl = true } = {}) {
+    clearError();
+    let bytes, tlvs;
+    try {
+      bytes = cleanHex(raw);
+      tlvs = parseTlv(bytes);
+    } catch (e) {
+      if (e && e.title) showError(e.title, e.detail); else showError("Couldn’t decode that data.", " " + (e?.message || ""));
+      return;
+    }
+    tagCount = 0;
+    const list = renderNodes(tlvs);
+    list.id = "tree";
+    treeEl.replaceWith(list);
+    treeEl = list;
+    meta.textContent = `${tagCount} tag${tagCount === 1 ? "" : "s"} in ${bytes.length} byte${bytes.length === 1 ? "" : "s"}`;
+    resultPanel.hidden = false;
+    if (updateUrl) {
+      try { history.replaceState(null, "", `?data=${toHex(bytes)}`); } catch (_) { /* not allowed in some viewers */ }
+    }
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    decode(input.value);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); decode(input.value); }
+  });
+  $("exampleBtn").addEventListener("click", () => { input.value = EXAMPLE; decode(EXAMPLE); });
+  $("clearBtn").addEventListener("click", () => {
+    input.value = ""; clearError(); resultPanel.hidden = true; input.focus();
+    try { history.replaceState(null, "", location.pathname); } catch (_) {}
+  });
+
+  // ---------- Reference view ----------
+  const refBody = $("refBody");
+  function renderReference(q = "") {
+    const needle = q.trim().toLowerCase();
+    refBody.innerHTML = "";
+    for (const [tag, [name, fmt]] of Object.entries(TAGS)) {
+      if (needle && !tag.toLowerCase().includes(needle) && !name.toLowerCase().includes(needle)) continue;
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td"); td1.className = "t"; td1.textContent = tag;
+      const td2 = document.createElement("td"); td2.textContent = name;
+      const td3 = document.createElement("td"); td3.className = "f"; td3.textContent = fmt;
+      tr.append(td1, td2, td3);
+      refBody.append(tr);
+    }
+    if (!refBody.children.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td"); td.colSpan = 3; td.textContent = "No tags match that search.";
+      tr.append(td); refBody.append(tr);
+    }
+  }
+  $("refSearch").addEventListener("input", (e) => renderReference(e.target.value));
+  renderReference();
+
+  // ---------- Views & deep links ----------
+  function showView(name) {
+    $("view-decoder").hidden = name !== "decoder";
+    $("view-reference").hidden = name !== "reference";
+    document.querySelectorAll("nav.side a").forEach(a => {
+      if (a.dataset.view === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+  }
+  document.querySelectorAll("nav.side a").forEach(a => {
+    a.addEventListener("click", (e) => { e.preventDefault(); showView(a.dataset.view); });
+  });
+
+  // Data can arrive as ?data=HEX (self-hosted) or #HEX (published link)
+  const hash = decodeURIComponent(location.hash.slice(1));
+  const qs = new URLSearchParams(location.search).get("data");
+  if (hash === "reference") {
+    showView("reference");
+  } else {
+    const initial = qs || (/^([0-9a-f]{2})+$/i.test(hash) ? hash : "");
+    if (initial) { input.value = initial.toUpperCase(); decode(initial, { updateUrl: false }); }
+  }
+</script>
+</body>
+</html>
